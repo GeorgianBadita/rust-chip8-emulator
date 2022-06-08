@@ -1,0 +1,15 @@
+[package]
+name = "chip8_emulator"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+sdl2 = "*"
+rand = "*"
+clap = "*"
+
+[features]
+default = []
+use_sdl2_mac_framework = ["sdl2/use_mac_framework"]
