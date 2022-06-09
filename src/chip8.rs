@@ -3,7 +3,7 @@ use rand::random;
 use sdl2::{event::Event, keyboard::Scancode, EventPump};
 use std::{cell::RefMut, fs::File, io::Read, process};
 
-pub struct Chip8 {
+pub(crate) struct Chip8 {
     memory: [u8; constants::MEMORY_IN_B],
     registers: [u8; constants::NUM_REGISTERS],
     index_register: u16,
@@ -57,7 +57,6 @@ impl Chip8 {
             0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
             0xF0, 0x80, 0xF0, 0x80, 0x80, // F
         ]);
-        print!("Fonts loaded in memory");
 
         // ROM
         let rom = Self::read_rom(rom_file_path);
@@ -88,7 +87,7 @@ impl Chip8 {
         memory[constants::PROGRAM_MEMORY_START..constants::PROGRAM_MEMORY_START + rom_size]
             .copy_from_slice(&rom[0..rom_size]);
 
-        Chip8 {
+        let chip = Chip8 {
             memory,
             registers,
             index_register,
@@ -105,7 +104,11 @@ impl Chip8 {
             update_screen_flag: false,
             beep_sound_flag: false,
             debug,
+        };
+        if debug {
+            println!("{}", DebugData::new(&chip, None));
         }
+        chip
     }
 
     pub fn get_screen(&self) -> &[u8; constants::SCREEN_SIZE] {
@@ -146,16 +149,18 @@ impl Chip8 {
                 panic!("Reached end of the program!");
             }
 
-            let instruction = (self.memory[self.program_counter as usize] as u16) << 8
+            let instruction_num = (self.memory[self.program_counter as usize] as u16) << 8
                 | self.memory[self.program_counter as usize + 1] as u16;
             self.program_counter += 2;
 
-            let code = instruction & 0xF000;
-            let x = ((instruction & 0x0F00) >> 8) as usize;
-            let y = ((instruction & 0x00F0) >> 4) as usize;
-            let n = instruction & 0x000F;
-            let nn = instruction & 0x00FF;
-            let nnn = instruction & 0x0FFF;
+            let instruction = Instruction::new(instruction_num);
+
+            let code = instruction.code.clone();
+            let x = instruction.x.clone();
+            let y = instruction.y.clone();
+            let n = instruction.n.clone();
+            let nn = instruction.nn.clone();
+            let nnn = instruction.nnn.clone();
 
             match code {
                 0x0000 => match n {
@@ -353,6 +358,10 @@ impl Chip8 {
                 },
                 _ => {}
             }
+            self.last_instruction_time = current_time;
+            if self.debug {
+                println!("{}", DebugData::new(self, Some(instruction)));
+            }
         }
     }
 
@@ -363,5 +372,72 @@ impl Chip8 {
             .read_to_end(&mut rom)
             .unwrap();
         rom
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Instruction {
+    code: u16,
+    x: usize,
+    y: usize,
+    n: u16,
+    nn: u16,
+    nnn: u16,
+}
+
+impl Instruction {
+    fn new(instruction: u16) -> Self {
+        let code = instruction & 0xF000;
+        let x = ((instruction & 0x0F00) >> 8) as usize;
+        let y = ((instruction & 0x00F0) >> 4) as usize;
+        let n = instruction & 0x000F;
+        let nn = instruction & 0x00FF;
+        let nnn = instruction & 0x0FFF;
+
+        Instruction {
+            code,
+            x,
+            y,
+            n,
+            nn,
+            nnn,
+        }
+    }
+}
+
+impl std::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "Instruction: {{Code: 0x{:02X}, X: 0x{:02X}, Y: 0x{:02X}, N: 0x{:02X}, NN: 0x{:02X}, NNN: 0x{:02X}}}\n",
+            self.code, self.x, self.y, self.n, self.nn, self.nnn
+        )
+    }
+}
+
+struct DebugData<'a> {
+    chip: &'a Chip8,
+    instruction: Option<Instruction>,
+}
+
+impl<'a> DebugData<'a> {
+    fn new(chip: &'a Chip8, instruction: Option<Instruction>) -> Self {
+        DebugData { chip, instruction }
+    }
+}
+
+impl std::fmt::Display for DebugData<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if let Some(instr) = self.instruction {
+            write!(f, "{}\n", instr).unwrap();
+        }
+        write!(f, "Registers: {:?}\n", self.chip.registers).unwrap();
+        write!(f, "Index Register: {}\n", self.chip.index_register).unwrap();
+        write!(f, "Program Counter: 0x{:02X}\n", self.chip.program_counter).unwrap();
+        write!(f, "Stack: {:?}\n", self.chip.stack).unwrap();
+        write!(f, "Stack Pointer: 0x{:02X}\n", self.chip.stack_pointer).unwrap();
+        write!(f, "Clear Screen Flag: {}\n", self.chip.clear_screen_flag).unwrap();
+        write!(f, "Update Screen Flag: {}\n", self.chip.update_screen_flag).unwrap();
+        write!(f, "Should Beep: {}\n", self.chip.beep_sound_flag)
     }
 }
